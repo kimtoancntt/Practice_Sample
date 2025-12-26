@@ -121,7 +121,15 @@ BEGIN
                 ON s.ProductName = p.ProductName
             LEFT JOIN Sales.ShippingAddress sa
                 ON s.ShippingAddress = sa.AddressText
-            WHERE s.OrderID BETWEEN @CurrID AND @EndID;
+            WHERE s.OrderID BETWEEN @CurrID AND @EndID
+              AND s.OrderDate >= @StartDate
+              AND s.OrderDate < DATEADD(DAY, 1, @EndDate)
+              AND NOT EXISTS (
+                SELECT 1 FROM logging.MigrationRowDetail t 
+                WHERE t.ReferenceID = s.OrderID 
+                AND t.MigrationStatus = 'Completed'
+                AND t.SourceTable = 'SalesOrder'
+              );
 
             DECLARE
                 @BatchRows INT = @@ROWCOUNT,

@@ -82,9 +82,9 @@ CREATE TABLE Sales.SaleOrder
     CreatedDate DATETIME2 DEFAULT GETDATE(),
     ModifiedDate DATETIME2 DEFAULT GETDATE(),
 
-    ADD CONSTRAINT FK_SaleOrder_Customer FOREIGN KEY (CustomerID) REFERENCES Sales.Customer(CustomerID),
-    ADD CONSTRAINT FK_SaleOrder_Product FOREIGN KEY (ProductID) REFERENCES Sales.Product(ProductID),
-    ADD CONSTRAINT FK_SaleOrder_ShippingAddress FOREIGN KEY (ShippingAddressID) REFERENCES Sales.ShippingAddress(AddressID)
+    CONSTRAINT FK_SaleOrder_Customer FOREIGN KEY (CustomerID) REFERENCES Sales.Customer(CustomerID),
+    CONSTRAINT FK_SaleOrder_Product FOREIGN KEY (ProductID) REFERENCES Sales.Product(ProductID),
+    CONSTRAINT FK_SaleOrder_ShippingAddress FOREIGN KEY (ShippingAddressID) REFERENCES Sales.ShippingAddress(AddressID)
 );
 
 CREATE INDEX IX_SalesOrder_OrderDate ON Sales.SaleOrder(OrderDate);
@@ -109,7 +109,10 @@ CREATE TABLE OldData.SalesOrder
     ModifiedDate DATETIME DEFAULT GETDATE()
 );
 CREATE INDEX IX_SalesOrderOld_OrderDate ON OldData.SalesOrder(OrderDate);
-CREATE INDEX IX_SalesOrderOld_OrderID_Date ON OldData.SalesOrder(OrderID, OrderDate);
+
+CREATE NONCLUSTERED INDEX IX_OldSalesOrder_Date_OrderID
+    ON OldData.SalesOrder (OrderDate, OrderID)
+    INCLUDE (CustomerEmail, ProductName, ShippingAddress, Quantity, UnitPrice, TotalAmount, OrderStatus, Notes);
 GO
 
 
@@ -132,6 +135,13 @@ CREATE TABLE logging.MigrationRowDetail
 );
 CREATE INDEX IX_MigrationTracker_Batch ON logging.MigrationRowDetail(MigrationBatch, MigrationStatus);
 CREATE INDEX IX_MigrationTracker_Date ON logging.MigrationRowDetail(MigrationDate);
+CREATE NONCLUSTERED INDEX IX_MigrationRowDetail_CheckCompleted
+ON logging.MigrationRowDetail
+(
+    ReferenceID,
+    SourceTable,
+    MigrationStatus
+);
 GO
 
 DROP TABLE IF EXISTS logging.MigrationRun;
@@ -167,7 +177,7 @@ CREATE TABLE Logging.MigrationRunDetail
     StartTime DATETIME2,
     EndTime DATETIME2,
 
-    ADD CONSTRAINT FK_MigrationRunDetail_Run FOREIGN KEY (RunID) REFERENCES Logging.MigrationRun(RunID)
+    CONSTRAINT FK_MigrationRunDetail_Run FOREIGN KEY (RunID) REFERENCES Logging.MigrationRun(RunID)
 );
 GO
 
@@ -181,7 +191,7 @@ CREATE TABLE Logging.MigrationError
     ErrorMessage NVARCHAR(500),
     ErrorTime DATETIME2 DEFAULT GETDATE(),
 
-    ADD CONSTRAINT FK_MigrationError_Run FOREIGN KEY (RunID) REFERENCES Logging.MigrationRun(RunID)
+    CONSTRAINT FK_MigrationError_Run FOREIGN KEY (RunID) REFERENCES Logging.MigrationRun(RunID)
 );
 GO
 
@@ -249,10 +259,15 @@ SELECT n INTO #Nums FROM N;
 CREATE CLUSTERED INDEX IX_Nums ON #Nums(n);
 GO
 
+CREATE SEQUENCE OldData.Seq_SalesOrderID
+AS BIGINT
+START WITH 1000000
+INCREMENT BY 1;
+GO
+
 DECLARE @BaseDate DATE = '2023-01-01';
-DECLARE @TotalWeeks INT = 104;            -- 2 years
-DECLARE @OrdersPerWeek INT = 96000;      -- ~30M total
-DECLARE @StartOrderID BIGINT = 1000000;
+DECLARE @TotalWeeks INT = 104;       -- 2 years
+DECLARE @OrdersPerWeek INT = 96000;
 DECLARE @Week INT = 0;
 
 WHILE @Week < @TotalWeeks
@@ -280,7 +295,8 @@ BEGIN
         Notes
     )
     SELECT
-        @StartOrderID + (@Week * @OrdersPerWeek) + n.n AS OrderID,
+        NEXT VALUE FOR OldData.Seq_SalesOrderID AS OrderID,
+
         DATEADD(DAY, ABS(CHECKSUM(NEWID())) % 7, @WeekStart),
 
         c.CustomerName,
@@ -320,9 +336,7 @@ BEGIN
         ) v (Idx, Status)
         WHERE v.Idx = ABS(CHECKSUM(NEWID())) % 5
     ) s
-    WHERE n.n < @OrdersPerWeek;
-
+    WHERE n.n <= @OrdersPerWeek;
 
     SET @Week += 1;
-END
-GO
+END;

@@ -88,7 +88,7 @@ BEGIN
 		-- Insert valid records
         IF @ValidRows > 0
         BEGIN
-            INSERT INTO Sales.SaleOrder WITH (TABLOCK) (
+            INSERT INTO Sales.SaleOrder (
                 OrderID, OrderDate, CustomerID, ProductID, Quantity,
                 UnitPrice, TotalAmount, OrderStatus, ShippingAddressID, Notes
             )
